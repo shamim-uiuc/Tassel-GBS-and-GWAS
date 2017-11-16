@@ -1,0 +1,68 @@
+#!/usr/bin/bash
+
+#For Calling SNPs using GBS data
+#Dependencies Tassel pipeline
+
+KEY_DIR="tomato_virus_exp_key.txt"
+REF_DIR="/shared_resources/shamim_share/genomes/SLycopersicum.fa"
+INPUT_DIR="/shared_resources/shamim_share/GBS_data/fastq"
+
+# GBSSeqToTagDBPlugin
+run_pipeline.pl -fork1 -GBSSeqToTagDBPlugin \
+   -e ApeKI \
+   -i ${INPUT_DIR} \
+   -db ./GBSV2.db \
+   -k ${KEY_DIR} \
+   -kmerLength 64 -minKmerL 20 -mnQS 10 -mxKmerNum 100000000 \
+   -endPlugin -runfork1 
+
+# TagExportToFastqPlugin
+run_pipeline.pl -fork1 -TagExportToFastqPlugin \
+  -db ./GBSV2.db \
+  -o tagsForAlign.fa.gz \
+  -c 5 \
+  -endPlugin -runfork1
+
+# bowtie2 alignment
+#bowtie2-build ${REF_DIR} index_base_name
+
+bowtie2 -p 15 --very-sensitive -x /Genomes/Tomato_bowtie2_index/SL2 -U tagsForAlign.fa.gz -S tagsForAlignFullvs.sam
+
+# SAMToGBSdbPlugin
+run_pipeline.pl -fork1 -SAMToGBSdbPlugin \
+  -i  tagsForAlignFullvs.sam \
+  -db ./GBSV2.db \
+  -aProp 0.0 -aLen 0 \
+  -endPlugin -runfork1
+
+# DiscoverySNPCallerPluginV2
+run_pipeline.pl -fork1 -DiscoverySNPCallerPluginV2 \
+  -db ./GBSV2.db \
+  -mnLCov 0.1 -mnMAF 0.01 \
+  -deleteOldData true \
+  -endPlugin -runfork1
+
+# SNPQualityProfilerPlugin
+run_pipeline.pl -fork1 -SNPQualityProfilerPlugin \
+  -db ./GBSV2.db \
+  -tname "TEST_output" \
+  -statFile "Summary_Stats.txt" \
+  -deleteOldData true \
+  -endPlugin -runfork1
+
+# GetTagSequenceFromDBPlugin
+run_pipeline.pl -fork1 -GetTagSequenceFromDBPlugin \
+  -db ./GBSV2.db \
+  -o ./allTagFile.txt \
+  -endPlugin -runfork1
+
+# ProductionSNPCallerPluginV2
+run_pipeline.pl -fork1 -ProductionSNPCallerPluginV2 \
+  -db ./GBSV2.db \
+  -e ApeKI \
+  -i ./fastq \
+  -k ${KEY_dir} \
+  -kmerLength 64 \
+  -o Final_production_SNPs.vcf \
+  -endPlugin -runfork1
+
